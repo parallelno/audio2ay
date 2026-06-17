@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audio2ay"
+version = "0.1.0"
+description = "Convert instrumental audio into a 50 Hz AY-3-8910 register stream (.ym)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "audio2ay contributors" }]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "soundfile>=0.12",
+    "librosa>=0.10",
+]
+
+[project.optional-dependencies]
+ml = [
+    "demucs>=4.0",
+    "basic-pitch>=0.4",
+    "torch>=2.0",
+]
+gui = [
+    "PySide6>=6.5",
+    "sounddevice>=0.4",
+]
+metrics = [
+    "mir_eval>=0.7",
+]
+dev = [
+    "pytest>=7",
+    "ruff>=0.1",
+]
+all = [
+    "audio2ay[ml,gui,metrics,dev]",
+]
+
+[project.scripts]
+audio2ay = "audio2ay.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"audio2ay" = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501", "E702", "B905", "F841"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
