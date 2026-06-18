@@ -124,11 +124,20 @@ class VoiceScheduler:
 class DualVoiceScheduler:
     """Schedule up to 6 voices across two AY chips (TurboSound-style).
 
-    Chip A is scheduled exactly as in the single-chip case (bass-pinned channel
-    A plus the two most salient ``other`` notes), so its output is unchanged.
-    The ``other`` notes chip A did *not* claim are handed to a second, identical
-    scheduler for chip B, giving three extra channels of polyphony. Drums stay
-    on chip A's noise channel.
+    Notes are interleaved by salience rank across both chips' melody slots so
+    that chip B always carries real notes rather than only detuned copies:
+
+    * Chip A has 2 melody slots (channels B + C).
+    * Chip B has 3 melody slots (channels A + B + C).
+    * The top-5 salient other-stem notes are assigned alternately:
+      rank 1 → chip A, rank 2 → chip B, rank 3 → chip A (chip A now full),
+      rank 4 → chip B, rank 5 → chip B.  Any overflow goes to whichever chip
+      still has a free slot.
+
+    This ensures that for a typical 2–3 note chord chip B still receives at
+    least one real note instead of being exclusively a detuned-copy generator.
+    Bass notes remain pinned to chip A channel A.  Drums stay on chip A's noise
+    channel.
     """
 
     def __init__(self, **scheduler_kwargs: float) -> None:
@@ -136,18 +145,31 @@ class DualVoiceScheduler:
         self.chip_b = VoiceScheduler(**scheduler_kwargs)
 
     def assign(self, frame: Frame) -> tuple[ChannelAssignment, ChannelAssignment]:
-        assign_a = self.chip_a.assign(frame)
-        used = {
-            (round(v.midi_pitch, 1), v.source)
-            for v in assign_a.to_list()
-            if v is not None
-        }
-        remaining = [
-            n
-            for n in frame.other_notes
-            if (round(n.midi_pitch, 1), n.source) not in used
-        ]
-        frame_b = Frame(bass_notes=[], other_notes=remaining, drum=None)
+        velocity_floor = self.chip_a.velocity_floor
+
+        # Sort all other-stem candidates by salience (descending).
+        other_sorted = sorted(
+            [n for n in frame.other_notes if n.velocity >= velocity_floor],
+            key=lambda n: -n.salience,
+        )
+
+        # Interleave across chips: chip A gets 2 melody slots, chip B gets 3.
+        # Alternate: A, B, A(full), B, B so both chips receive high-salience notes.
+        a_melody: list[FrameNote] = []
+        b_melody: list[FrameNote] = []
+        for i, note in enumerate(other_sorted):
+            if len(a_melody) + len(b_melody) >= 5:  # 2 + 3 total melody slots
+                break
+            if i % 2 == 0 and len(a_melody) < 2:
+                a_melody.append(note)
+            elif len(b_melody) < 3:
+                b_melody.append(note)
+            elif len(a_melody) < 2:  # chip B full, overflow to chip A
+                a_melody.append(note)
+
+        frame_a = Frame(bass_notes=frame.bass_notes, other_notes=a_melody, drum=frame.drum)
+        frame_b = Frame(bass_notes=[], other_notes=b_melody, drum=None)
+        assign_a = self.chip_a.assign(frame_a)
         assign_b = self.chip_b.assign(frame_b)
         return assign_a, assign_b
 

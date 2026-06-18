@@ -52,8 +52,11 @@ class ConvertOptions:
     # track when the drums stem RMS is below this fraction of the mix RMS.
     drum_energy_floor: float = 0.06
     # Drop phantom drum hits when the drums stem is too tonal (leaked piano /
-    # keys rather than real percussion). Spectral flatness of 1.0 = white noise;
-    # real drums score ~0.05-0.15 on their active frames, leaked piano < 0.03.
+    # keys rather than real percussion). Tests the 90th-percentile of spectral
+    # flatness across active frames: real drums spike high at hit moments so
+    # the top decile stays elevated even when most frames are low (tonal bleed);
+    # a pure tonal stem stays flat across all frames. Threshold 0.04 reliably
+    # separates piano-only stems (p90 ≈ 0.02) from real drum stems (p90 > 0.05).
     # Set to 0.0 to disable.
     drum_tonality_floor: float = 0.04
     # Emit a second AY chip (TurboSound-style): 6 tone channels total. The extra
@@ -133,6 +136,12 @@ def convert_audio_to_ym(
             drum_hits = []
     # Second gate: if the drums stem is predominantly tonal (piano/keys leakage)
     # rather than broadband percussion, treat all detected hits as phantom.
+    #
+    # Key insight: real drum stems have LOW flatness most of the time (tonal
+    # bleed between hits) but spike HIGH at actual hit frames. A pure tonal
+    # stem (piano resonance) stays low across ALL frames. So we test the
+    # 90th-percentile of flatness values rather than the mean: real drums lift
+    # the top decile well above the threshold even when the mean is low.
     if drum_hits and opts.drum_tonality_floor > 0.0:
         import librosa as _librosa
 
@@ -140,21 +149,22 @@ def convert_audio_to_ym(
         hop = 512
         sf = _librosa.feature.spectral_flatness(y=drums_audio, hop_length=hop)[0]
         rms_frames = _librosa.feature.rms(y=drums_audio, hop_length=hop)[0]
-        # Only look at active frames (above the 10th-percentile energy) so the
-        # noise floor doesn't distort the flatness estimate.
+        # Restrict to active frames so the silence floor doesn't inflate the
+        # percentile with near-zero flatness values.
         above_floor = rms_frames > float(np.percentile(rms_frames, 10))
-        mean_flatness = (
-            float(np.mean(sf[above_floor])) if above_floor.any() else float(np.mean(sf))
-        )
-        if mean_flatness < opts.drum_tonality_floor:
+        sf_active = sf[above_floor] if above_floor.any() else sf
+        peak_flatness = float(np.percentile(sf_active, 90))
+        if peak_flatness < opts.drum_tonality_floor:
             log.info(
-                "Drum stem is too tonal (flatness=%.4f < %.4f); "
+                "Drum stem is too tonal (flatness p90=%.4f < %.4f); "
                 "dropping %d phantom hits",
-                mean_flatness,
+                peak_flatness,
                 opts.drum_tonality_floor,
                 len(drum_hits),
             )
             drum_hits = []
+        else:
+            log.debug("Drum stem tonality OK (flatness p90=%.4f)", peak_flatness)
     log.info(
         "Bass notes=%d other notes=%d drum hits=%d",
         len(bass_events),
@@ -183,6 +193,22 @@ def convert_audio_to_ym(
         abs_onset_gate=opts.abs_onset_gate,
     )
     _t = _tick(f"build timeline  ({len(timeline)} frames)", _t)
+
+    # Log per-frame polyphony distribution so we can tell whether limiting
+    # bass to one channel is a real constraint or a theoretical one.
+    if log.isEnabledFor(logging.INFO):
+        from collections import Counter
+        bass_counts = Counter(len(f.bass_notes) for f in timeline)
+        other_counts = Counter(len(f.other_notes) for f in timeline)
+        n = len(timeline) or 1
+        bass_dist = "  ".join(
+            f"{k}:{v}({100*v//n}%)" for k, v in sorted(bass_counts.items())
+        )
+        other_dist = "  ".join(
+            f"{k}:{v}({100*v//n}%)" for k, v in sorted(other_counts.items()) if k <= 8
+        )
+        log.info("Bass notes/frame distribution:  %s", bass_dist)
+        log.info("Other notes/frame distribution: %s", other_dist)
 
     # --------------------------------------------------------- synth
     env_ctrl = EnvelopeController(clock_hz=opts.clock_hz)
