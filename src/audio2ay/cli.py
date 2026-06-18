@@ -109,54 +109,9 @@ def cmd_convert(args: argparse.Namespace) -> int:
 
 def cmd_preview(args: argparse.Namespace) -> int:
     """Convert audio straight to an audio file (via emulator), skipping .ym."""
-
-    # Native crashes in third-party ML stacks (Demucs / TensorFlow deps) are
-    # process-fatal on Windows. Run preview logic in a worker subprocess so the
-    # parent command can retry instead of dying immediately.
-    if os.environ.get("A2A_PREVIEW_WORKER") != "1":
-        cmd = [sys.executable, "-m", "audio2ay.cli", "preview", args.input]
-        if args.output:
-            cmd.append(args.output)
-        cmd.extend(["--sample-rate", str(args.sample_rate)])
-        cmd.extend(["--demucs-model", str(args.demucs_model)])
-        if args.envelope:
-            cmd.append("--envelope")
-        if args.no_enrich:
-            cmd.append("--no-enrich")
-        cmd.extend(["--detune-cents", str(args.detune_cents)])
-        cmd.extend(["--enrich-volume-b", str(args.enrich_volume_b)])
-        if args.no_loudness_match:
-            cmd.append("--no-loudness-match")
-        cmd.extend(["--brightness", str(args.brightness)])
-        if args.dual_chip:
-            cmd.append("--dual-chip")
-        cmd.extend(["--frame-rate", str(getattr(args, "frame_rate", 50))])
-        if args.hz100:
-            cmd.append("--100hz")
-        cmd.extend(["--pulse-width", str(args.pulse_width)])
-        env = os.environ.copy()
-        env["A2A_PREVIEW_WORKER"] = "1"
-
-        last_code = 1
-        for attempt in range(1, 4):
-            try:
-                proc = subprocess.run(cmd, env=env, timeout=180)
-                rc = int(proc.returncode)
-            except subprocess.TimeoutExpired:
-                rc = 124
-            if rc == 0:
-                return 0
-            last_code = int(rc)
-            logging.getLogger("audio2ay").warning(
-                "Preview worker exited with code %s (attempt %d/3), retrying...",
-                rc,
-                attempt,
-            )
-
-        return last_code
-
     from .io.ay_emulator import render_song_to_array
     from .pipeline import ConvertOptions, convert_audio_to_ym
+    import time as _time
 
     frame_rate_hz = 100 if args.hz100 else getattr(args, "frame_rate", 50)
 
@@ -171,9 +126,14 @@ def cmd_preview(args: argparse.Namespace) -> int:
         brightness=args.brightness,
         dual_chip=args.dual_chip,
     )
+    _tc = _time.perf_counter()
     song = convert_audio_to_ym(args.input, None, options=options)
+    _tr = _time.perf_counter()
     audio = render_song_to_array(song, sample_rate=args.sample_rate,
                                  pulse_width=args.pulse_width)
+    _tw = _time.perf_counter()
+    logging.getLogger("audio2ay").info("  [%.1f s] render (AY emulator)", _tw - _tr)
+    logging.getLogger("audio2ay").info("  [%.1f s] TOTAL convert+render", _tw - _tc)
     # Default preview output to MP3 when not explicitly provided.
     out_path = Path(args.output) if args.output else Path("build") / f"{Path(args.input).stem}.mp3"
     out_path.parent.mkdir(parents=True, exist_ok=True)

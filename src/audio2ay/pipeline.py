@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time as _time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,21 +77,33 @@ def convert_audio_to_ym(
     opts = options or ConvertOptions()
     in_path = Path(in_path)
     out_path = Path(out_path) if out_path is not None else None
+    _t0 = _time.perf_counter()
+
+    def _tick(label: str, t_prev: float) -> float:
+        t = _time.perf_counter()
+        log.info("  [%.1f s] %s", t - t_prev, label)
+        return t
+
     log.info("Loading %s", in_path)
     audio, sr = load_audio_stereo(in_path)
     duration_sec = audio.shape[-1] / sr
+    _t = _tick(f"load audio  ({duration_sec:.1f}s source, sr={sr})", _t0)
 
     # ------------------------------------------------------------ separation
     log.info("Running source separation (Demucs %s)", opts.demucs_model)
     stems = separate(audio, sr, model_name=opts.demucs_model)
+    _t = _tick("separate (Demucs)", _t)
 
     # ------------------------------------------------------------ analysis
     log.info("Transcribing bass")
     bass_events = transcribe(stems.bass, stems.sample_rate, min_freq_hz=30.0, max_freq_hz=350.0)
+    _t = _tick(f"transcribe bass  ({len(bass_events)} notes)", _t)
     log.info("Transcribing other")
     other_events = transcribe(stems.other, stems.sample_rate, min_freq_hz=80.0, max_freq_hz=4000.0)
+    _t = _tick(f"transcribe other  ({len(other_events)} notes)", _t)
     log.info("Detecting drums")
     drum_hits = detect_drums(stems.drums, stems.sample_rate)
+    _t = _tick(f"detect drums  ({len(drum_hits)} hits)", _t)
     # Demucs leaks tonal onsets into the drums stem on percussion-free material,
     # producing phantom snares. Drop the drum track when the drums stem is
     # negligible relative to the full mix.
@@ -132,6 +145,7 @@ def convert_audio_to_ym(
         bass_follower=bass_follower,
         other_follower=other_follower,
     )
+    _t = _tick(f"build timeline  ({len(timeline)} frames)", _t)
 
     # --------------------------------------------------------- synth
     env_ctrl = EnvelopeController(clock_hz=opts.clock_hz)
@@ -189,9 +203,6 @@ def convert_audio_to_ym(
         for fi, tf in enumerate(timeline):
             assign_a, assign_b = scheduler.assign(tf)
             frames.append(_make_frame(assign_a, env_ctrl, tf.drum, master_gain=master[fi]))
-            # Chip B doubles whatever chip A is voicing (slightly detuned) on any
-            # channel it isn't already using, so its three channels never sit
-            # idle while there is sound to thicken.
             seeds_b = [v for v in assign_a.to_list() if v is not None and v.velocity > 0.0]
             frames_b.append(
                 _make_frame(
@@ -208,6 +219,7 @@ def convert_audio_to_ym(
         for fi, tf in enumerate(timeline):
             assignment = scheduler.assign(tf)
             frames.append(_make_frame(assignment, env_ctrl, tf.drum, master_gain=master[fi]))
+    _t = _tick(f"synth frames  ({len(frames)} frames)", _t)
 
     song = YmSong(
         frames=frames,
