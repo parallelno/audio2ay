@@ -253,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
     p_conv.add_argument("output")
     p_conv.add_argument("--demucs-model", default="htdemucs")
     p_conv.add_argument("--envelope", action="store_true",
-                        help="Enable the (experimental) hardware envelope on channel A")
+                        help="Run hardware envelope at note pitch for sawtooth bass timbre on channel A")
     p_conv.add_argument("--no-enrich", action="store_true",
                         help="Disable filling idle channels with detuned unison copies")
     p_conv.add_argument("--detune-cents", type=float, default=9.0,
@@ -285,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
     p_prev.add_argument("--sample-rate", type=int, default=44100)
     p_prev.add_argument("--demucs-model", default="htdemucs")
     p_prev.add_argument("--envelope", action="store_true",
-                        help="Enable the (experimental) hardware envelope on channel A")
+                        help="Run hardware envelope at note pitch for sawtooth bass timbre on channel A")
     p_prev.add_argument("--no-enrich", action="store_true",
                         help="Disable filling idle channels with detuned unison copies")
     p_prev.add_argument("--detune-cents", type=float, default=9.0,
@@ -321,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     p_val.add_argument("input")
     p_val.add_argument("--outdir", default="build")
     p_val.add_argument("--envelope", action="store_true",
-                       help="Enable the (experimental) hardware envelope on channel A")
+                       help="Run hardware envelope at note pitch for sawtooth bass timbre on channel A")
     p_val.add_argument("--no-enrich", action="store_true",
                        help="Disable filling idle channels with detuned unison copies")
     p_val.add_argument("--detune-cents", type=float, default=9.0,

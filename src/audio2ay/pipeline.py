@@ -29,10 +29,10 @@ log = logging.getLogger(__name__)
 class ConvertOptions:
     clock_hz: int = AY_CLOCK_HZ
     frame_rate_hz: int = FRAME_RATE_HZ
-    # The hardware envelope generator is single-shared and currently only emits
-    # a continuous tremolo on channel A, which overrides the bass note's real
-    # dynamics. Software per-voice amplitude envelopes (see synth.volume_quantizer
-    # .voice_gain) give better results, so the hardware envelope is opt-in.
+    # Run the hardware envelope at audio frequencies so its sawtooth/triangle
+    # shape adds harmonic richness to the bass channel (the "fast-envelope bass"
+    # trick).  Software amplitude envelopes (volume_quantizer.voice_gain) give
+    # better macro-dynamics on their own, so this is opt-in via --envelope.
     use_envelope: bool = False
     demucs_model: str = "htdemucs"
 
@@ -134,7 +134,7 @@ def convert_audio_to_ym(
     )
 
     # --------------------------------------------------------- synth
-    env_ctrl = EnvelopeController()
+    env_ctrl = EnvelopeController(clock_hz=opts.clock_hz)
 
     # Master loudness contour (one gain per frame) from the full mix, so the
     # render breathes with the original instead of running at a flat level.
@@ -184,7 +184,7 @@ def convert_audio_to_ym(
 
     if opts.dual_chip:
         scheduler = DualVoiceScheduler()
-        env_ctrl_b = EnvelopeController()
+        env_ctrl_b = EnvelopeController(clock_hz=opts.clock_hz)
         frames_b = []
         for fi, tf in enumerate(timeline):
             assign_a, assign_b = scheduler.assign(tf)

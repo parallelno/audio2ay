@@ -37,7 +37,7 @@ def test_pipeline_synthetic_mix(tmp_path: Path) -> None:
     in_wav = tmp_path / "mix.wav"
     out_ym = tmp_path / "mix.ym"
     _make_mix(in_wav)
-    options = ConvertOptions(skip_separation=True, use_envelope=False)
+    options = ConvertOptions(use_envelope=False)
     song = convert_audio_to_ym(in_wav, out_ym, options=options)
 
     assert out_ym.exists()
@@ -59,7 +59,7 @@ def test_pipeline_silence(tmp_path: Path) -> None:
     sr = 22050
     sf.write(str(in_wav), np.zeros(int(sr * 1.0), dtype=np.float32), sr, subtype="PCM_16")
     out_ym = tmp_path / "sil.ym"
-    options = ConvertOptions(skip_separation=True, use_envelope=False)
+    options = ConvertOptions(use_envelope=False)
     song = convert_audio_to_ym(in_wav, out_ym, options=options)
     audio = render_song_to_array(song, sample_rate=44100)
     # All channels should stay muted: very low RMS.
@@ -74,12 +74,12 @@ def test_pipeline_frame_rate_100hz(tmp_path: Path) -> None:
     song_50 = convert_audio_to_ym(
         in_wav,
         None,
-        options=ConvertOptions(skip_separation=True, use_envelope=False, frame_rate_hz=50),
+        options=ConvertOptions(use_envelope=False, frame_rate_hz=50),
     )
     song_100 = convert_audio_to_ym(
         in_wav,
         None,
-        options=ConvertOptions(skip_separation=True, use_envelope=False, frame_rate_hz=100),
+        options=ConvertOptions(use_envelope=False, frame_rate_hz=100),
     )
 
     assert song_50.frame_rate_hz == 50

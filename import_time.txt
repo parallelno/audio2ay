@@ -1,0 +1,33 @@
+import time: self [us] | cumulative | imported package
+import time:       234 |        234 | winreg
+import time:       470 |        470 |   _io
+import time:        79 |         79 |   marshal
+import time:       466 |        466 |   nt
+import time:       604 |       1617 | _frozen_importlib_external
+import time:      1317 |       1317 |   time
+import time:       198 |       1515 | zipimport
+import time:       104 |        104 |     _codecs
+import time:       535 |        638 |   codecs
+import time:      2403 |       2403 |   encodings.aliases
+import time:      4069 |       7110 | encodings
+import time:      1302 |       1302 | encodings.utf_8
+import time:      1365 |       1365 | encodings.cp1252
+import time:       103 |        103 | _signal
+import time:        89 |         89 |     _abc
+import time:       253 |        341 |   abc
+import time:       286 |        627 | io
+import time:       120 |        120 |       _stat
+import time:       150 |        270 |     stat
+import time:      1590 |       1590 |     _collections_abc
+import time:       106 |        106 |       genericpath
+import time:       250 |        250 |       _winapi
+import time:       182 |        537 |     ntpath
+import time:       502 |       2898 |   os
+import time:       190 |        190 |   _sitebuiltins
+import time:      2574 |       2574 |   sitecustomize
+import time:      2298 |       7959 | site
+import time:      1638 |       1638 |   audio2ay
+import time:        71 |       1709 | audio2ay.pipeline
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+ModuleNotFoundError: No module named 'audio2ay'

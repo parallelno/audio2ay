@@ -35,7 +35,7 @@ audio2ay validate input.wav --outdir build/
 | `--frame-rate N` | `50` | convert, preview, validate | Register update rate (50 or 100 Hz). |
 | `--100hz` | off | convert, preview, validate | Shortcut for `--frame-rate 100`. |
 | `--pulse-width N` | `0.7` | preview, render, validate | Pulse duty cycle: 0.5=square/harsh, 0.7=default, 0.75=wider/darker. |
-| `--envelope` | off | convert, preview, validate | Enable the experimental hardware envelope on channel A. |
+| `--envelope` | off | convert, preview, validate | Run the hardware envelope at the bass note's pitch on channel A, giving a sawtooth timbre instead of a plain square wave. |
 | `-v`, `--verbose` | off | all | Show full third-party logs (Basic Pitch / absl). |
 
 `validate` accepts the same flags as `convert` and `preview` except `--demucs-model`.
