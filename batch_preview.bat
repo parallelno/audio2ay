@@ -4,8 +4,7 @@ SET s3="TheDungeonoftheLost.mp3"
 SET s4="12Reggae.mp3"
 SET s5="NeonNostalgia_2.mp3"
 
-SET f1="--dual-chip"
-SET flags=%f1%
+SET flags=--dual-chip --enrich-volume-b 0.3
 
 
 SET input_dir="C:\Users\parallelno\Downloads\"

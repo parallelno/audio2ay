@@ -52,6 +52,9 @@ def separate(audio_stereo: np.ndarray, sr: int, *, model_name: str = "htdemucs")
     from demucs.apply import apply_model
     from demucs.pretrained import get_model
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    log.info("Demucs device: %s", device)
+
     if audio_stereo.ndim == 1:
         audio_stereo = np.stack([audio_stereo, audio_stereo], axis=0)
     elif audio_stereo.shape[0] == 1:
@@ -59,6 +62,7 @@ def separate(audio_stereo: np.ndarray, sr: int, *, model_name: str = "htdemucs")
 
     model = get_model(model_name)
     model.eval()
+    model.to(device)
     # Demucs expects (batch, channels, samples), float32, sr matching model.samplerate.
     target_sr = int(model.samplerate)
     if sr != target_sr:
@@ -72,7 +76,7 @@ def separate(audio_stereo: np.ndarray, sr: int, *, model_name: str = "htdemucs")
         audio_stereo = resampled
         sr = target_sr
 
-    wav = torch.from_numpy(audio_stereo).unsqueeze(0).float()
+    wav = torch.from_numpy(audio_stereo).unsqueeze(0).float().to(device)
     with torch.no_grad():
         sources = apply_model(model, wav, split=True, overlap=0.25, progress=False)
     sources = sources.squeeze(0).cpu().numpy()  # (n_sources, ch, samples)

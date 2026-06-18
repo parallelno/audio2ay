@@ -2,20 +2,10 @@
 
 import os as _os
 
-# PyTorch (Demucs) and TensorFlow (Basic Pitch) each ship their own OpenMP
-# runtime. When both are loaded in one process on Windows the duplicate Intel
-# OpenMP (libiomp5md.dll) intermittently corrupts memory and the interpreter
-# dies with a native ACCESS_VIOLATION (exit code 0xC0000005) — no traceback,
-# no output file. These guards must be set before numpy/torch/tensorflow are
-# imported, so they live at the top of the package __init__ (the first module
-# loaded). Force these values because conflicting pre-set values can still lead
-# to intermittent ACCESS_VIOLATION crashes on Windows when TF + torch coexist.
+# Safety guard in case any indirect dep ships a second OpenMP runtime alongside
+# PyTorch. KMP_DUPLICATE_LIB_OK=TRUE prevents an ACCESS_VIOLATION on Windows
+# when two libiomp5md.dll copies end up loaded in the same process.
 _os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-_os.environ["MKL_THREADING_LAYER"] = "SEQUENTIAL"
-_os.environ.setdefault("OMP_NUM_THREADS", "1")
-_os.environ.setdefault("MKL_NUM_THREADS", "1")
-_os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
-_os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 __version__ = "0.1.0"
 
