@@ -35,7 +35,7 @@ class ConvertOptions:
     # .voice_gain) give better results, so the hardware envelope is opt-in.
     use_envelope: bool = False
     demucs_model: str = "htdemucs"
-    skip_separation: bool = False  # Useful for tests / when input is a single stem.
+
     # Fill idle channels with slightly detuned unison copies of the active note
     # so sparse (mono/duo) material uses all 3 channels for a fuller tone.
     enrich_unison: bool = True
@@ -81,19 +81,8 @@ def convert_audio_to_ym(
     duration_sec = audio.shape[-1] / sr
 
     # ------------------------------------------------------------ separation
-    if opts.skip_separation:
-        mono = audio.mean(axis=0).astype(np.float32) if audio.ndim > 1 else audio
-        from .analysis.separation import Stems
-        stems = Stems(
-            drums=np.zeros_like(mono),
-            bass=mono,
-            other=mono,
-            vocals=np.zeros_like(mono),
-            sample_rate=sr,
-        )
-    else:
-        log.info("Running source separation (Demucs %s)", opts.demucs_model)
-        stems = separate(audio, sr, model_name=opts.demucs_model)
+    log.info("Running source separation (Demucs %s)", opts.demucs_model)
+    stems = separate(audio, sr, model_name=opts.demucs_model)
 
     # ------------------------------------------------------------ analysis
     log.info("Transcribing bass")

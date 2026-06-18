@@ -3,9 +3,8 @@
 Returns a list of note events with start/end times (seconds), MIDI pitch, and
 a per-note normalised velocity in [0, 1].
 
-Falls back to a librosa-based monophonic-ish fallback (single dominant pitch
-per frame) if Basic Pitch isn't installed; that mode is good enough for bass
-lines and unit-test scenarios.
+Requires ``onnxruntime`` and the ``basic-pitch`` package (ONNX model included).
+Install via ``pip install -e .[ml]``.
 """
 
 from __future__ import annotations
@@ -14,26 +13,19 @@ import importlib.util
 import importlib.machinery
 import logging
 import sys
-import tempfile
 import types
 from dataclasses import dataclass
 from pathlib import Path
 
 import librosa
 import numpy as np
-import soundfile as sf
 
 log = logging.getLogger(__name__)
 
 
 @dataclass
 class NoteEvent:
-    """One transcribed note.
-
-    Fields are intentionally minimal so events can come from either Basic Pitch
-    (polyphonic, with pitch bends collapsed to the median) or the fallback
-    monophonic detector.
-    """
+    """One transcribed note (from Basic Pitch, polyphonic, pitch bends collapsed to median)."""
 
     start_sec: float
     end_sec: float
@@ -56,29 +48,22 @@ def transcribe(
     onset_threshold: float = 0.4,
     frame_threshold: float = 0.3,
 ) -> list[NoteEvent]:
-    """Run Basic Pitch (or fallback) on a mono audio buffer.
+    """Run Basic Pitch on a mono audio buffer via ONNX runtime.
 
     ``min_note_length_ms`` overrides Basic Pitch's 127.7 ms default, which is
     ~6 frames at 50 Hz and silently discards fast passages. We lower it to
     ~2 frames so quick notes survive into the timeline. ``onset_threshold`` is
     also relaxed slightly so soft fast onsets are not missed.
     """
-    try:
-        note_events = _predict_note_events_onnx(
-            audio,
-            sr,
-            min_freq_hz=min_freq_hz,
-            max_freq_hz=max_freq_hz,
-            min_note_length_ms=min_note_length_ms,
-            onset_threshold=onset_threshold,
-            frame_threshold=frame_threshold,
-        )
-    except Exception as onnx_exc:  # pragma: no cover - optional dep path
-        log.warning(
-            "ONNX transcription path unavailable (%s); using librosa monophonic fallback.",
-            onnx_exc,
-        )
-        return _fallback_monophonic(audio, sr, min_freq_hz, max_freq_hz)
+    note_events = _predict_note_events_onnx(
+        audio,
+        sr,
+        min_freq_hz=min_freq_hz,
+        max_freq_hz=max_freq_hz,
+        min_note_length_ms=min_note_length_ms,
+        onset_threshold=onset_threshold,
+        frame_threshold=frame_threshold,
+    )
     # `note_events` is a list of (start, end, midi_pitch, velocity, pitch_bends_or_None).
     out: list[NoteEvent] = []
     for ev in note_events:
@@ -238,84 +223,3 @@ def _load_basic_pitch_onnx_modules() -> tuple[types.ModuleType, types.ModuleType
         n_spec.loader.exec_module(note_creation)
 
     return constants, note_creation, onnx_path
-
-
-def _fallback_monophonic(
-    audio: np.ndarray, sr: int, min_freq: float, max_freq: float
-) -> list[NoteEvent]:
-    """Fallback when Basic Pitch is unavailable: single-pitch tracker via librosa.pyin."""
-    import librosa
-
-    if audio.size == 0:
-        return []
-    f0, voiced_flag, voiced_prob = librosa.pyin(
-        audio,
-        fmin=max(min_freq, 30.0),
-        fmax=min(max_freq, 1500.0),
-        sr=sr,
-        frame_length=2048,
-    )
-    # Convert frame-by-frame to NoteEvents by grouping consecutive voiced frames
-    # with a similar pitch.
-    times = librosa.times_like(f0, sr=sr)
-    rms = librosa.feature.rms(y=audio, frame_length=2048, hop_length=512)[0]
-    # Trim/pad rms to match f0 length.
-    if len(rms) > len(f0):
-        rms = rms[: len(f0)]
-    elif len(rms) < len(f0):
-        rms = np.pad(rms, (0, len(f0) - len(rms)))
-
-    events: list[NoteEvent] = []
-    current_pitch = None
-    current_start = None
-    current_rms_sum = 0.0
-    current_count = 0
-
-    for i, (t, f, voiced) in enumerate(zip(times, f0, voiced_flag)):
-        if not voiced or f is None or np.isnan(f) or f <= 0:
-            if current_pitch is not None:
-                events.append(
-                    NoteEvent(
-                        start_sec=float(current_start),
-                        end_sec=float(t),
-                        midi_pitch=float(current_pitch),
-                        velocity=float(min(1.0, current_rms_sum / max(current_count, 1) * 4)),
-                    )
-                )
-                current_pitch = None
-            continue
-        midi = librosa.hz_to_midi(f)
-        if current_pitch is None:
-            current_pitch = midi
-            current_start = t
-            current_rms_sum = rms[i]
-            current_count = 1
-        elif abs(midi - current_pitch) > 0.5:
-            events.append(
-                NoteEvent(
-                    start_sec=float(current_start),
-                    end_sec=float(t),
-                    midi_pitch=float(current_pitch),
-                    velocity=float(min(1.0, current_rms_sum / max(current_count, 1) * 4)),
-                )
-            )
-            current_pitch = midi
-            current_start = t
-            current_rms_sum = rms[i]
-            current_count = 1
-        else:
-            # Smooth update
-            current_pitch = 0.7 * current_pitch + 0.3 * midi
-            current_rms_sum += rms[i]
-            current_count += 1
-
-    if current_pitch is not None:
-        events.append(
-            NoteEvent(
-                start_sec=float(current_start),
-                end_sec=float(times[-1]),
-                midi_pitch=float(current_pitch),
-                velocity=float(min(1.0, current_rms_sum / max(current_count, 1) * 4)),
-            )
-        )
-    return events

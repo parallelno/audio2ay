@@ -7,18 +7,12 @@ We defensively drop the vocals stem (the input is declared instrumental) and
 warn if the vocal energy is non-trivial.
 
 The Demucs API at `demucs.apply.apply_model` is preferred over the CLI for
-in-process use. Falls back to a degraded-but-functional analysis if Demucs is
-not installed (single tonal stem = the original mix, no drums isolation).
+in-process use.
 
 **Why separation matters:**
 - Drums are isolated → accurate onset detection and noise-channel routing.
 - Bass/other are isolated → clean pitch transcription (no bass/melody interference).
 - Better multi-voice part separation → more accurate AY channel assignment.
-
-**Without separation (--no-separation flag):**
-- Entire mix transcribed as one signal → blurred pitch, drums lost, poor part separation.
-- Only viable for single clean instruments (solo synth, trumpet, etc.).
-- For mixed music, measurably degrades quality. The flag is rarely useful in practice.
 """
 
 from __future__ import annotations
@@ -54,19 +48,9 @@ def separate(audio_stereo: np.ndarray, sr: int, *, model_name: str = "htdemucs")
     `audio_stereo` is shape (channels, samples). If only 1 channel is provided,
     it is duplicated to stereo for Demucs.
     """
-    try:
-        import torch
-        from demucs.apply import apply_model
-        from demucs.pretrained import get_model
-    except Exception as exc:  # pragma: no cover - optional dep path
-        log.warning(
-            "Demucs not available (%s); falling back to no-separation. "
-            "Install with `pip install audio2ay[ml]` for proper stem splitting.",
-            exc,
-        )
-        mono = audio_stereo.mean(axis=0).astype(np.float32)
-        zero = np.zeros_like(mono)
-        return Stems(drums=zero, bass=zero, other=mono, vocals=zero, sample_rate=sr)
+    import torch
+    from demucs.apply import apply_model
+    from demucs.pretrained import get_model
 
     if audio_stereo.ndim == 1:
         audio_stereo = np.stack([audio_stereo, audio_stereo], axis=0)

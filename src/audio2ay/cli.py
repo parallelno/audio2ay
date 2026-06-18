@@ -94,7 +94,6 @@ def cmd_convert(args: argparse.Namespace) -> int:
 
     options = ConvertOptions(
         demucs_model=args.demucs_model,
-        skip_separation=args.no_separation,
         frame_rate_hz=frame_rate_hz,
         use_envelope=args.envelope,
         enrich_unison=not args.no_enrich,
@@ -120,8 +119,6 @@ def cmd_preview(args: argparse.Namespace) -> int:
             cmd.append(args.output)
         cmd.extend(["--sample-rate", str(args.sample_rate)])
         cmd.extend(["--demucs-model", str(args.demucs_model)])
-        if args.no_separation:
-            cmd.append("--no-separation")
         if args.envelope:
             cmd.append("--envelope")
         if args.no_enrich:
@@ -156,23 +153,6 @@ def cmd_preview(args: argparse.Namespace) -> int:
                 attempt,
             )
 
-        # Last-resort fallback for unstable separation backends.
-        if not args.no_separation:
-            fallback_cmd = list(cmd)
-            if "--no-separation" not in fallback_cmd:
-                fallback_cmd.append("--no-separation")
-            logging.getLogger("audio2ay").warning(
-                "Preview still unstable after retries; retrying once with --no-separation."
-            )
-            try:
-                proc = subprocess.run(fallback_cmd, env=env, timeout=180)
-                rc = int(proc.returncode)
-            except subprocess.TimeoutExpired:
-                rc = 124
-            if rc == 0:
-                return 0
-            last_code = int(rc)
-
         return last_code
 
     from .io.ay_emulator import render_song_to_array
@@ -182,7 +162,6 @@ def cmd_preview(args: argparse.Namespace) -> int:
 
     options = ConvertOptions(
         demucs_model=args.demucs_model,
-        skip_separation=args.no_separation,
         frame_rate_hz=frame_rate_hz,
         use_envelope=args.envelope,
         enrich_unison=not args.no_enrich,
@@ -237,7 +216,6 @@ def cmd_validate(args: argparse.Namespace) -> int:
     frame_rate_hz = 100 if args.hz100 else getattr(args, "frame_rate", 50)
 
     options = ConvertOptions(
-        skip_separation=args.no_separation,
         frame_rate_hz=frame_rate_hz,
         use_envelope=args.envelope,
         enrich_unison=not args.no_enrich,
@@ -248,7 +226,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
         dual_chip=args.dual_chip,
     )
     convert_audio_to_ym(in_path, ym_path, options=options)
-    
+
     # Render with custom pulse width if specified
     song = read_ym5(ym_path)
     audio = render_song_to_array(song, sample_rate=44100,
@@ -265,13 +243,6 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_gui(_args: argparse.Namespace) -> int:
-    from .validate.gui import launch_gui
-
-    launch_gui()
-    return 0
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="audio2ay", description=__doc__)
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -281,8 +252,6 @@ def main(argv: list[str] | None = None) -> int:
     p_conv.add_argument("input")
     p_conv.add_argument("output")
     p_conv.add_argument("--demucs-model", default="htdemucs")
-    p_conv.add_argument("--no-separation", action="store_true",
-                        help="Skip Demucs (treat input as a single stem)")
     p_conv.add_argument("--envelope", action="store_true",
                         help="Enable the (experimental) hardware envelope on channel A")
     p_conv.add_argument("--no-enrich", action="store_true",
@@ -315,8 +284,6 @@ def main(argv: list[str] | None = None) -> int:
                         help="Output path (default: build/<input-stem>.mp3)")
     p_prev.add_argument("--sample-rate", type=int, default=44100)
     p_prev.add_argument("--demucs-model", default="htdemucs")
-    p_prev.add_argument("--no-separation", action="store_true",
-                        help="Skip Demucs (treat input as a single stem)")
     p_prev.add_argument("--envelope", action="store_true",
                         help="Enable the (experimental) hardware envelope on channel A")
     p_prev.add_argument("--no-enrich", action="store_true",
@@ -353,7 +320,6 @@ def main(argv: list[str] | None = None) -> int:
     p_val = sub.add_parser("validate", help="Convert + render + dump side-by-side WAVs")
     p_val.add_argument("input")
     p_val.add_argument("--outdir", default="build")
-    p_val.add_argument("--no-separation", action="store_true")
     p_val.add_argument("--envelope", action="store_true",
                        help="Enable the (experimental) hardware envelope on channel A")
     p_val.add_argument("--no-enrich", action="store_true",
@@ -378,9 +344,6 @@ def main(argv: list[str] | None = None) -> int:
     p_val.add_argument("--pulse-width", type=float, default=0.7,
                        help="Pulse duty cycle (0.5=square/harsh, 0.7=default, 0.75=wider/darker)")
     p_val.set_defaults(func=cmd_validate)
-
-    p_gui = sub.add_parser("gui", help="Launch the A/B GUI")
-    p_gui.set_defaults(func=cmd_gui)
 
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
