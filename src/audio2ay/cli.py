@@ -98,10 +98,11 @@ def cmd_convert(args: argparse.Namespace) -> int:
         use_envelope=args.envelope,
         enrich_unison=not args.no_enrich,
         enrich_detune_cents=args.detune_cents,
-        enrich_volume_b=args.enrich_volume_b,
+        enrich_volume=args.enrich_volume,
         match_loudness=not args.no_loudness_match,
         brightness=args.brightness,
         dual_chip=args.dual_chip,
+        abs_onset_gate=args.abs_onset_gate,
     )
     convert_audio_to_ym(args.input, args.output, options=options)
     return 0
@@ -121,10 +122,11 @@ def cmd_preview(args: argparse.Namespace) -> int:
         use_envelope=args.envelope,
         enrich_unison=not args.no_enrich,
         enrich_detune_cents=args.detune_cents,
-        enrich_volume_b=args.enrich_volume_b,
+        enrich_volume=args.enrich_volume,
         match_loudness=not args.no_loudness_match,
         brightness=args.brightness,
         dual_chip=args.dual_chip,
+        abs_onset_gate=args.abs_onset_gate,
     )
     _tc = _time.perf_counter()
     song = convert_audio_to_ym(args.input, None, options=options)
@@ -178,10 +180,11 @@ def cmd_validate(args: argparse.Namespace) -> int:
         use_envelope=args.envelope,
         enrich_unison=not args.no_enrich,
         enrich_detune_cents=args.detune_cents,
-        enrich_volume_b=args.enrich_volume_b,
+        enrich_volume=args.enrich_volume,
         match_loudness=not args.no_loudness_match,
         brightness=args.brightness,
         dual_chip=args.dual_chip,
+        abs_onset_gate=args.abs_onset_gate,
     )
     convert_audio_to_ym(in_path, ym_path, options=options)
 
@@ -215,9 +218,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="Disable filling idle channels with detuned unison copies")
     p_conv.add_argument("--detune-cents", type=float, default=9.0,
                         help="Unison detune spread for idle-channel enrichment (cents)")
-    p_conv.add_argument("--enrich-volume-b", type=float, default=0.75,
-                        help="Loudness of chip B's unison doubling (0=silent, 1=full); "
-                             "lower it if the second chip is too prominent")
+    p_conv.add_argument("--enrich-volume", type=float, default=0.4,
+                        help="Loudness of detuned unison copies relative to a real voice "
+                             "(0=silent, 1=full); lower to keep the melody above the fills")
+    p_conv.add_argument("--abs-onset-gate", type=float, default=0.06,
+                        help="Expander gate for quiet residual notes: onset energy below "
+                             "(stem_peak * threshold) is attenuated. 0=disable")
     p_conv.add_argument("--no-loudness-match", action="store_true",
                         help="Don't track the original mix's loudness contour "
                              "(keep a flat output level)")
@@ -247,9 +253,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="Disable filling idle channels with detuned unison copies")
     p_prev.add_argument("--detune-cents", type=float, default=9.0,
                         help="Unison detune spread for idle-channel enrichment (cents)")
-    p_prev.add_argument("--enrich-volume-b", type=float, default=0.75,
-                        help="Loudness of chip B's unison doubling (0=silent, 1=full); "
-                             "lower it if the second chip is too prominent")
+    p_prev.add_argument("--enrich-volume", type=float, default=0.4,
+                        help="Loudness of detuned unison copies relative to a real voice "
+                             "(0=silent, 1=full); lower to keep the melody above the fills")
+    p_prev.add_argument("--abs-onset-gate", type=float, default=0.06,
+                        help="Expander gate for quiet residual notes: onset energy below "
+                             "(stem_peak * threshold) is attenuated. 0=disable")
     p_prev.add_argument("--no-loudness-match", action="store_true",
                         help="Don't track the original mix's loudness contour "
                              "(keep a flat output level)")
@@ -279,9 +288,12 @@ def main(argv: list[str] | None = None) -> int:
                        help="Disable filling idle channels with detuned unison copies")
     p_val.add_argument("--detune-cents", type=float, default=9.0,
                        help="Unison detune spread for idle-channel enrichment (cents)")
-    p_val.add_argument("--enrich-volume-b", type=float, default=0.75,
-                       help="Loudness of chip B's unison doubling (0=silent, 1=full); "
-                            "lower it if the second chip is too prominent")
+    p_val.add_argument("--enrich-volume", type=float, default=0.4,
+                       help="Loudness of detuned unison copies relative to a real voice "
+                            "(0=silent, 1=full); lower to keep the melody above the fills")
+    p_val.add_argument("--abs-onset-gate", type=float, default=0.06,
+                       help="Expander gate for quiet residual notes: onset energy below "
+                            "(stem_peak * threshold) is attenuated. 0=disable")
     p_val.add_argument("--no-loudness-match", action="store_true",
                        help="Don't track the original mix's loudness contour "
                             "(keep a flat output level)")

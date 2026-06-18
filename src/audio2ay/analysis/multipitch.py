@@ -38,6 +38,12 @@ class NoteEvent:
         return max(0.0, self.end_sec - self.start_sec)
 
 
+# Harmonic-series intervals in semitones for 2nd through 8th partials.
+# Piano inharmonicity adds at most ~30 cents for high partials, so 50-cent
+# tolerance (0.5 st) covers all cases.
+_HARMONIC_ST: tuple[float, ...] = (12.0, 19.019, 24.0, 27.863, 31.174, 33.688, 36.0)
+
+
 def transcribe(
     audio: np.ndarray,
     sr: int,
@@ -47,6 +53,7 @@ def transcribe(
     min_note_length_ms: float = 46.0,
     onset_threshold: float = 0.4,
     frame_threshold: float = 0.3,
+    suppress_harmonics: bool = True,
 ) -> list[NoteEvent]:
     """Run Basic Pitch on a mono audio buffer via ONNX runtime.
 
@@ -54,6 +61,11 @@ def transcribe(
     ~6 frames at 50 Hz and silently discards fast passages. We lower it to
     ~2 frames so quick notes survive into the timeline. ``onset_threshold`` is
     also relaxed slightly so soft fast onsets are not missed.
+
+    When ``suppress_harmonics`` is True (default), notes whose pitch is at a
+    harmonic-series interval above a simultaneously active louder note are
+    removed.  This prevents strong piano overtones from being transcribed as
+    spurious high-register notes.
     """
     note_events = _predict_note_events_onnx(
         audio,
@@ -76,7 +88,56 @@ def transcribe(
                 velocity=float(velocity) / 127.0 if velocity > 1.0 else float(velocity),
             )
         )
+    if suppress_harmonics:
+        n_before = len(out)
+        out = _suppress_harmonics(out)
+        n_removed = n_before - len(out)
+        if n_removed:
+            log.debug("suppress_harmonics removed %d overtone events", n_removed)
     return out
+
+
+def _suppress_harmonics(
+    events: list[NoteEvent],
+    tolerance_cents: float = 50.0,
+    min_velocity_ratio: float = 0.8,
+) -> list[NoteEvent]:
+    """Remove notes that are likely overtones of a simultaneously active louder note.
+
+    A note *Y* is suppressed when all of the following hold:
+
+    * Another note *X* with lower MIDI pitch overlaps *Y* in time.
+    * The pitch difference ``Y.midi_pitch - X.midi_pitch`` is within
+      ``tolerance_cents`` of a harmonic-series interval (see ``_HARMONIC_ST``).
+    * ``Y.velocity <= X.velocity * min_velocity_ratio`` — *Y* is notably
+      weaker than the fundamental, as expected for an overtone artifact.
+
+    The velocity guard prevents suppression of intentional octave chords where
+    both notes are played at similar strength.
+    """
+    if len(events) < 2:
+        return events
+    tol_st = tolerance_cents / 100.0
+    suppress: set[int] = set()
+    for i, ev_high in enumerate(events):
+        if i in suppress:
+            continue
+        for j, ev_low in enumerate(events):
+            if j == i or j in suppress:
+                continue
+            diff = ev_high.midi_pitch - ev_low.midi_pitch
+            if diff <= 0.0:
+                continue
+            # Must overlap in time.
+            if ev_high.start_sec >= ev_low.end_sec or ev_low.start_sec >= ev_high.end_sec:
+                continue
+            # Check whether the pitch difference matches a harmonic interval.
+            for h_st in _HARMONIC_ST:
+                if abs(diff - h_st) <= tol_st:
+                    if ev_high.velocity <= ev_low.velocity * min_velocity_ratio:
+                        suppress.add(i)
+                    break
+    return [ev for k, ev in enumerate(events) if k not in suppress]
 
 
 def _predict_note_events_onnx(

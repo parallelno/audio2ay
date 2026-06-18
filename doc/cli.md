@@ -29,7 +29,8 @@ audio2ay validate input.wav --outdir build/
 | `--dual-chip` | off | convert, preview, validate | Emit **two** AY chips (TurboSound-style) for 6 tone channels. |
 | `--no-enrich` | off | convert, preview, validate | Disable filling idle channels with detuned unison copies. |
 | `--detune-cents N` | `9.0` | convert, preview, validate | Unison detune spread (cents) for idle-channel enrichment. |
-| `--enrich-volume-b N` | `0.75` | convert, preview, validate | Chip B's doubling volume (0–1) when using `--dual-chip`. |
+| `--enrich-volume N` | `0.4` | convert, preview, validate | Volume of detuned unison copies relative to a real voice (0–1). Applies to idle channels on chip A and all of chip B. Lower it if background fills drown the melody. |
+| `--abs-onset-gate N` | `0.06` | convert, preview, validate | Downward expander gate: notes whose onset energy is below `stem_peak × N` are attenuated by `√(onset/threshold)`. Suppresses quiet residual piano resonance without affecting loudly-struck notes. Set to `0` to disable. |
 | `--no-loudness-match` | off | convert, preview, validate | Skip tracking original's loudness contour (keep flat level). |
 | `--brightness N` | `0.85` | convert, preview, validate | Per-octave high-voice attenuation (1.0=off, lower=darker). |
 | `--frame-rate N` | `50` | convert, preview, validate | Register update rate (50 or 100 Hz). |
@@ -54,4 +55,10 @@ audio2ay preview input.wav out_100hz.wav --frame-rate 100
 # Wider unison shimmer; or turn enrichment off entirely
 audio2ay convert input.wav out.ym --detune-cents 14
 audio2ay convert input.wav out.ym --no-enrich
+
+# Quiet the background fills (unison copies), keep melody dominant
+audio2ay preview input.wav out.wav --enrich-volume 0.25
+
+# Stronger gate against residual piano resonance
+audio2ay preview input.wav out.wav --abs-onset-gate 0.12
 ```

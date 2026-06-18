@@ -76,11 +76,15 @@ def voice_gain(age_frames: int) -> float:
 
     The note's real attack/decay now comes from the per-frame source-energy
     follower (see :class:`audio2ay.analysis.amplitude.AmplitudeFollower`), so
-    this only softens the very first frame: switching a square wave on at full
+    this only softens the first few frames: switching a square wave on at full
     amplitude in one 20 ms frame produces an audible click on the AY.
+    A 3-frame ramp (60 ms at 50 Hz) gives a perceptibly smoother onset while
+    remaining fast enough for staccato passages.
     """
     if age_frames <= 0:
         return 0.0
     if age_frames == 1:
-        return 0.5
+        return 0.3
+    if age_frames == 2:
+        return 0.65
     return 1.0

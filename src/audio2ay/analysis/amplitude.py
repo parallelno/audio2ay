@@ -115,6 +115,19 @@ class AmplitudeFollower:
         """True if the follower carries real signal energy."""
         return self._ncols > 1
 
+    @property
+    def global_ref(self) -> float:
+        """95th-percentile of the per-frame maximum STFT magnitude.
+
+        Used as a stem-wide loudness reference so that the timeline can
+        discriminate genuine notes (high onset energy relative to this ref)
+        from quiet residual resonance (onset energy well below this ref).
+        """
+        if not self.available:
+            return 1.0
+        per_frame_max = self._S.max(axis=0)
+        return float(np.percentile(per_frame_max, 95))
+
     def band(self, frame_index: int, midi_pitch: float) -> float:
         """Harmonic-band energy around ``midi_pitch`` on ``frame_index``.
 

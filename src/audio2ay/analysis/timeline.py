@@ -49,6 +49,7 @@ def build_timeline(
     drum_decay_frames: int = 4,
     bass_follower: AmplitudeFollower | None = None,
     other_follower: AmplitudeFollower | None = None,
+    abs_onset_gate: float = 0.06,
 ) -> list[Frame]:
     """Merge transcribed events onto the 50 Hz frame grid for the given duration.
 
@@ -58,6 +59,14 @@ def build_timeline(
     If an :class:`AmplitudeFollower` is supplied for a stem, each note's
     per-frame velocity tracks the source energy around its pitch (normalised to
     the note's own onset), giving real attack/decay instead of a flat sustain.
+
+    ``abs_onset_gate`` is a downward expander threshold expressed as a fraction
+    of the stem's global peak energy (``AmplitudeFollower.global_ref``).  A
+    note whose onset energy is below ``global_ref * abs_onset_gate`` has its
+    velocity scaled toward zero by ``sqrt(onset / threshold)``.  This silences
+    residual piano resonance and other quiet artefacts that the transcription
+    picks up but that are perceptually much softer than the real struck notes.
+    Set to 0.0 to disable.
 
     Drum hits decay across `drum_decay_frames` so the noise channel has natural
     tails on the AY (which has no per-channel envelope reset for noise).
@@ -72,6 +81,12 @@ def build_timeline(
         follower: AmplitudeFollower | None,
     ) -> None:
         use_follower = follower is not None and follower.available
+        gate_ref = (
+            follower.global_ref
+            if (use_follower and abs_onset_gate > 0.0)
+            else 0.0
+        )
+        gate_thresh = gate_ref * abs_onset_gate if gate_ref > 1e-9 else 0.0
         for ev in events:
             f0 = max(0, int(round(ev.start_sec * frame_rate_hz)))
             f1 = min(n_frames - 1, int(round(ev.end_sec * frame_rate_hz)))
@@ -80,12 +95,20 @@ def build_timeline(
             # Reference energy at the note's onset for self-normalised dynamics.
             base = follower.band(f0, ev.midi_pitch) if use_follower else 0.0
             track = use_follower and base > 1e-6
+            # Absolute-level expander: notes whose onset energy is below the
+            # gate threshold are attenuated proportionally (sqrt rolloff).
+            # This suppresses quiet residual piano resonance that the
+            # transcription picks up but that should be nearly inaudible.
+            if gate_thresh > 0.0 and base < gate_thresh:
+                abs_scale = float(np.sqrt(max(0.0, base / gate_thresh)))
+            else:
+                abs_scale = 1.0
             for fi in range(f0, f1 + 1):
                 if track:
                     ratio = follower.band(fi, ev.midi_pitch) / base
-                    vel = float(np.clip(ev.velocity * ratio, 0.0, 1.0))
+                    vel = float(np.clip(ev.velocity * ratio * abs_scale, 0.0, 1.0))
                 else:
-                    vel = ev.velocity
+                    vel = ev.velocity * abs_scale
                 getattr(frames[fi], bucket_attr).append(
                     FrameNote(
                         midi_pitch=ev.midi_pitch,

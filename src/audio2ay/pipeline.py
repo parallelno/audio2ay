@@ -41,14 +41,21 @@ class ConvertOptions:
     # so sparse (mono/duo) material uses all 3 channels for a fuller tone.
     enrich_unison: bool = True
     enrich_detune_cents: float = 9.0
-    # Loudness of the detuned unison copies on the *second* chip relative to a
-    # full-scale voice. Chip B doubles chip A for harmonic richness, but at full
-    # volume that doubling can dominate; lower this to push it into the
-    # background. 1.0 = as loud as a real voice, 0.0 = silent (no chip-B doubling).
-    enrich_volume_b: float = 0.75
+    # Loudness of detuned unison copies relative to a full-scale real voice.
+    # Applies to idle channels on chip A (single-chip) and all of chip B
+    # (dual-chip). At 0.75 two copies at that level produce more total power
+    # than the one real melody note, which drowns the melody in a background hum.
+    # 0.4 keeps copies audible for harmonic richness while leaving the real
+    # note clearly louder. 1.0 = as loud as a real voice, 0.0 = silent.
+    enrich_volume: float = 0.4
     # Demucs can hallucinate faint percussion from tonal onsets. Drop the drum
     # track when the drums stem RMS is below this fraction of the mix RMS.
     drum_energy_floor: float = 0.06
+    # Drop phantom drum hits when the drums stem is too tonal (leaked piano /
+    # keys rather than real percussion). Spectral flatness of 1.0 = white noise;
+    # real drums score ~0.05-0.15 on their active frames, leaked piano < 0.03.
+    # Set to 0.0 to disable.
+    drum_tonality_floor: float = 0.04
     # Emit a second AY chip (TurboSound-style): 6 tone channels total. The extra
     # polyphony goes on chip B; chip A is unchanged. Optional, off by default.
     dual_chip: bool = False
@@ -61,6 +68,11 @@ class ConvertOptions:
     # < 1.0 gently attenuates high voices (per octave above middle C) to pull the
     # spectral centroid back down toward the original; 1.0 disables the tilt.
     brightness: float = 0.85
+    # Downward expander gate for the amplitude-follower: a note whose onset
+    # energy is below (stem_peak * abs_onset_gate) has its velocity attenuated
+    # by sqrt(onset / threshold). Suppresses quiet residual piano resonance
+    # without affecting loudly-struck notes. 0.0 = disable.
+    abs_onset_gate: float = 0.06
 
 
 def convert_audio_to_ym(
@@ -119,6 +131,30 @@ def convert_audio_to_ym(
                 len(drum_hits),
             )
             drum_hits = []
+    # Second gate: if the drums stem is predominantly tonal (piano/keys leakage)
+    # rather than broadband percussion, treat all detected hits as phantom.
+    if drum_hits and opts.drum_tonality_floor > 0.0:
+        import librosa as _librosa
+
+        drums_audio = stems.drums.astype(np.float32)
+        hop = 512
+        sf = _librosa.feature.spectral_flatness(y=drums_audio, hop_length=hop)[0]
+        rms_frames = _librosa.feature.rms(y=drums_audio, hop_length=hop)[0]
+        # Only look at active frames (above the 10th-percentile energy) so the
+        # noise floor doesn't distort the flatness estimate.
+        above_floor = rms_frames > float(np.percentile(rms_frames, 10))
+        mean_flatness = (
+            float(np.mean(sf[above_floor])) if above_floor.any() else float(np.mean(sf))
+        )
+        if mean_flatness < opts.drum_tonality_floor:
+            log.info(
+                "Drum stem is too tonal (flatness=%.4f < %.4f); "
+                "dropping %d phantom hits",
+                mean_flatness,
+                opts.drum_tonality_floor,
+                len(drum_hits),
+            )
+            drum_hits = []
     log.info(
         "Bass notes=%d other notes=%d drum hits=%d",
         len(bass_events),
@@ -144,6 +180,7 @@ def convert_audio_to_ym(
         frame_rate_hz=opts.frame_rate_hz,
         bass_follower=bass_follower,
         other_follower=other_follower,
+        abs_onset_gate=opts.abs_onset_gate,
     )
     _t = _tick(f"build timeline  ({len(timeline)} frames)", _t)
 
@@ -210,7 +247,7 @@ def convert_audio_to_ym(
                     env_ctrl_b,
                     None,
                     enrich_seeds=seeds_b,
-                    enrich_volume_scale=opts.enrich_volume_b,
+                    enrich_volume_scale=opts.enrich_volume,
                     master_gain=master[fi],
                 )
             )
@@ -218,7 +255,15 @@ def convert_audio_to_ym(
         scheduler = VoiceScheduler()
         for fi, tf in enumerate(timeline):
             assignment = scheduler.assign(tf)
-            frames.append(_make_frame(assignment, env_ctrl, tf.drum, master_gain=master[fi]))
+            frames.append(
+                _make_frame(
+                    assignment,
+                    env_ctrl,
+                    tf.drum,
+                    enrich_volume_scale=opts.enrich_volume,
+                    master_gain=master[fi],
+                )
+            )
     _t = _tick(f"synth frames  ({len(frames)} frames)", _t)
 
     song = YmSong(
