@@ -34,19 +34,18 @@ audio2ay validate input.wav --outdir build/
 | `--brightness N` | `0.85` | convert, preview, validate | Per-octave high-voice attenuation (1.0=off, lower=darker). |
 | `--frame-rate N` | `50` | convert, preview, validate | Register update rate (50 or 100 Hz). |
 | `--100hz` | off | convert, preview, validate | Shortcut for `--frame-rate 100`. |
-| `--pulse-width N` | `0.7` | preview, render, validate | Pulse duty cycle: 0.5=square/harsh, 0.7=default, 0.75=wider/darker. |
 | `--envelope` | off | convert, preview, validate | Run the hardware envelope at the bass note's pitch on channel A, giving a sawtooth timbre instead of a plain square wave. |
 | `-v`, `--verbose` | off | all | Show full third-party logs (Basic Pitch / absl). |
 
 `validate` accepts the same flags as `convert` and `preview` except `--demucs-model`.
-`render` accepts only `--pulse-width` and `--sample-rate`.
+`render` accepts only `--sample-rate`.
 
 ## Examples
 
 ```pwsh
 # Fuller sound via two chips (6 tone channels)
 audio2ay convert input.wav out.ym --dual-chip
-audio2ay preview input.wav out.wav --dual-chip --pulse-width 0.7
+audio2ay preview input.wav out.wav --dual-chip
 
 # Higher register update rate for finer timing on Vector-06C
 audio2ay convert input.wav out_100hz.ym --100hz
@@ -55,8 +54,4 @@ audio2ay preview input.wav out_100hz.wav --frame-rate 100
 # Wider unison shimmer; or turn enrichment off entirely
 audio2ay convert input.wav out.ym --detune-cents 14
 audio2ay convert input.wav out.ym --no-enrich
-
-# Adjust pulse width to control harshness (narrower = brighter, wider = darker)
-audio2ay preview input.wav out.wav --pulse-width 0.65   # Brighter
-audio2ay preview input.wav out.wav --pulse-width 0.75   # Darker
 ```

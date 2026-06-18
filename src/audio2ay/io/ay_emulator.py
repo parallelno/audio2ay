@@ -78,10 +78,9 @@ for sh in range(16):
 class AYRenderer:
     """Stateful renderer that converts YM register frames into PCM samples."""
 
-    def __init__(self, clock_hz: int, sample_rate: int = 44100, pulse_width: float = 0.7) -> None:
+    def __init__(self, clock_hz: int, sample_rate: int = 44100) -> None:
         self.clock_hz = int(clock_hz)
         self.sr = int(sample_rate)
-        self.pulse_width = float(np.clip(pulse_width, 0.1, 0.9))  # Clamp to avoid degenerate waves
         # Phase accumulators (cycles, fractional).
         self.phase = np.zeros(3, dtype=np.float64)
         # Noise: 17-bit LFSR seeded to all-ones.
@@ -141,13 +140,11 @@ class AYRenderer:
         # treat it as a shape latch (matches ST-Sound/Ayumi behaviour).
         shape_byte = regs[13]
         if shape_byte != 0xFF:
-            new_shape = shape_byte & 0x0F
-            # In real hardware *any* write to R13 retriggers; we mimic by
-            # resetting on shape change.
-            if new_shape != self.env_shape:
-                self.env_shape = new_shape
-                self.env_step = 0
-                self.env_acc = 0.0
+            # Any write to R13 retriggers the envelope from step 0,
+            # regardless of whether the shape value changed — matches real hardware.
+            self.env_shape = shape_byte & 0x0F
+            self.env_step = 0
+            self.env_acc = 0.0
 
         # ------------------------------------------------------------ tones
         # Square waves at f = clk / (16 * tp). dphase per sample = f / sr.
@@ -163,9 +160,8 @@ class AYRenderer:
             phases = self.phase[ch] + dphi * np.arange(n_samples, dtype=np.float64)
             self.phase[ch] = float((phases[-1] + dphi) % 1.0)
             phases = phases % 1.0
-            # Variable duty-cycle pulse wave: high when phase < pulse_width.
-            # pulse_width=0.5 → 50% square, 0.75 → 75% high (fewer harmonics).
-            sq = (phases < self.pulse_width).astype(np.float32)
+            # 50% duty cycle square wave — matches real AY-3-8910 hardware.
+            sq = (phases < 0.5).astype(np.float32)
             squares.append(sq)
 
         # ------------------------------------------------------------ noise
@@ -266,29 +262,27 @@ class AYRenderer:
         return (out / np.float32(1.5)).astype(np.float32)
 
 
-def render_song_to_array(song: YmSong, sample_rate: int = 44100, pulse_width: float = 0.7) -> np.ndarray:
+def render_song_to_array(song: YmSong, sample_rate: int = 44100) -> np.ndarray:
     """Render an in-memory YM song to a float32 mono numpy array.
 
     Dual-AY songs (``song.frames_b`` set) render each chip with its own stateful
     renderer and sum the two, scaled to stay within range.
-    
+
     Args:
         song: YM song to render.
         sample_rate: Output sample rate in Hz.
-        pulse_width: Pulse duty cycle (default 0.7; reduces square-wave harshness).
-            0.5=square (harsh), 0.7=wider pulse (fewer harmonics, smoother).
     """
     samples_per_frame = sample_rate // song.frame_rate_hz
     n_total = len(song.frames) * samples_per_frame
 
-    rend_a = AYRenderer(clock_hz=song.clock_hz, sample_rate=sample_rate, pulse_width=pulse_width)
+    rend_a = AYRenderer(clock_hz=song.clock_hz, sample_rate=sample_rate)
     out = np.empty(n_total, dtype=np.float32)
     for i, frame in enumerate(song.frames):
         chunk = rend_a.render_frame(list(frame.regs), samples_per_frame)
         out[i * samples_per_frame : (i + 1) * samples_per_frame] = chunk
 
     if song.frames_b is not None:
-        rend_b = AYRenderer(clock_hz=song.clock_hz, sample_rate=sample_rate, pulse_width=pulse_width)
+        rend_b = AYRenderer(clock_hz=song.clock_hz, sample_rate=sample_rate)
         for i, frame in enumerate(song.frames_b):
             chunk = rend_b.render_frame(list(frame.regs), samples_per_frame)
             sl = slice(i * samples_per_frame, (i + 1) * samples_per_frame)

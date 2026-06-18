@@ -129,8 +129,7 @@ def cmd_preview(args: argparse.Namespace) -> int:
     _tc = _time.perf_counter()
     song = convert_audio_to_ym(args.input, None, options=options)
     _tr = _time.perf_counter()
-    audio = render_song_to_array(song, sample_rate=args.sample_rate,
-                                 pulse_width=args.pulse_width)
+    audio = render_song_to_array(song, sample_rate=args.sample_rate)
     _tw = _time.perf_counter()
     logging.getLogger("audio2ay").info("  [%.1f s] render (AY emulator)", _tw - _tr)
     logging.getLogger("audio2ay").info("  [%.1f s] TOTAL convert+render", _tw - _tc)
@@ -147,8 +146,7 @@ def cmd_render(args: argparse.Namespace) -> int:
     import soundfile as sf
 
     song = read_ym5(args.input)
-    audio = render_song_to_array(song, sample_rate=args.sample_rate,
-                                 pulse_width=args.pulse_width)
+    audio = render_song_to_array(song, sample_rate=args.sample_rate)
     # Create parent directories if needed
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -189,8 +187,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
     # Render with custom pulse width if specified
     song = read_ym5(ym_path)
-    audio = render_song_to_array(song, sample_rate=44100,
-                                 pulse_width=args.pulse_width)
+    audio = render_song_to_array(song, sample_rate=44100)
     sf.write(str(ay_wav), audio, 44100, subtype="PCM_16")
 
     # Convenience: also drop a wav of the original at 44.1k mono for A/B-ing.
@@ -265,16 +262,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="YM register update rate in Hz (50=classic, 100=finer timing)")
     p_prev.add_argument("--100hz", dest="hz100", action="store_true",
                         help="Shortcut for --frame-rate 100")
-    p_prev.add_argument("--pulse-width", type=float, default=0.7,
-                        help="Pulse duty cycle (0.5=square/harsh, 0.7=default, 0.75=wider/darker)")
     p_prev.set_defaults(func=cmd_preview)
 
     p_rend = sub.add_parser("render", help=".ym → .wav via the bundled emulator")
     p_rend.add_argument("input")
     p_rend.add_argument("output")
     p_rend.add_argument("--sample-rate", type=int, default=44100)
-    p_rend.add_argument("--pulse-width", type=float, default=0.7,
-                        help="Pulse duty cycle (0.5=square/harsh, 0.7=default, 0.75=wider/darker)")
     p_rend.set_defaults(func=cmd_render)
 
     p_val = sub.add_parser("validate", help="Convert + render + dump side-by-side WAVs")
@@ -301,8 +294,6 @@ def main(argv: list[str] | None = None) -> int:
                        help="YM register update rate in Hz (50=classic, 100=finer timing)")
     p_val.add_argument("--100hz", dest="hz100", action="store_true",
                        help="Shortcut for --frame-rate 100")
-    p_val.add_argument("--pulse-width", type=float, default=0.7,
-                       help="Pulse duty cycle (0.5=square/harsh, 0.7=default, 0.75=wider/darker)")
     p_val.set_defaults(func=cmd_validate)
 
     args = parser.parse_args(argv)
